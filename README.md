@@ -1,12 +1,12 @@
 # Sentinel
 
 Self-hosted service monitoring dashboard. This initial foundation contains a React
-placeholder and an Express server; monitoring and database features are not yet
-implemented. See [PROJECT.md](PROJECT.md) for the implementation plan.
+placeholder, an Express server, and SQLite persistence. Monitoring features are
+not yet implemented. See [PROJECT.md](PROJECT.md) for the implementation plan.
 
 ## Requirements
 
-- Node.js 22.12 or newer
+- Node.js 22.13 or newer (built-in SQLite requires no additional database package)
 - npm
 
 ## Development
@@ -48,3 +48,25 @@ self-hosting.
 `HOST` and `PORT` configure the Express listener; defaults are `127.0.0.1` and
 `3000`. For example, `HOST=0.0.0.0 PORT=8080 npm start`. During development, keep
 port 3000 unless you also update the proxy target in `vite.config.ts`.
+
+## Database
+
+The server opens `data/sentinel.sqlite` on startup, creating its parent directory
+and applying pending migrations automatically. Set `DATABASE_PATH` to use another
+file, for example `DATABASE_PATH=/srv/sentinel/sentinel.sqlite npm start`.
+Relative paths resolve from the working directory. `:memory:` is also supported.
+
+SQLite uses WAL mode, foreign keys, and a five-second busy timeout. The connection
+closes when the server shuts down. Node.js 22 may print an experimental warning
+for its built-in SQLite API.
+
+The database stores service configuration and check results, including nullable
+HTTP status, response time, and error information. Timestamps are Unix milliseconds;
+intervals and durations are milliseconds. Deleting a service also deletes its
+check results. Typed persistence functions live in `src/server/persistence.ts`.
+There are no service API routes or automatic checks yet.
+
+Schema migrations are ordered SQL entries in `src/server/migrations.ts`, tracked
+with SQLite's `user_version` and applied in a transaction. Add new entries rather
+than editing migrations already deployed. A newer, unsupported database version
+is rejected. Tests use temporary databases, never the configured application file.
