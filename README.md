@@ -64,9 +64,31 @@ The database stores service configuration and check results, including nullable
 HTTP status, response time, and error information. Timestamps are Unix milliseconds;
 intervals and durations are milliseconds. Deleting a service also deletes its
 check results. Typed persistence functions live in `src/server/persistence.ts`.
-There are no service API routes or automatic checks yet.
+Service management is available through the API below. Automatic checks are not
+implemented yet.
 
 Schema migrations are ordered SQL entries in `src/server/migrations.ts`, tracked
 with SQLite's `user_version` and applied in a transaction. Add new entries rather
 than editing migrations already deployed. A newer, unsupported database version
 is rejected. Tests use temporary databases, never the configured application file.
+
+## Service management API
+
+| Method | Path | Result |
+|---|---|---|
+| GET | `/api/services` | List service configurations (200). |
+| POST | `/api/services` | Create a service (201). |
+| PATCH | `/api/services/:id` | Edit fields, including `enabled` (200). |
+| DELETE | `/api/services/:id` | Delete a service and its check results (204). |
+
+POST and PATCH require `Content-Type: application/json`. Creation requires `name`
+(non-empty string) and `url` (absolute HTTP/HTTPS URL). Optional fields are
+`intervalMs` (default 60000), `timeoutMs` (default 10000), and `enabled` (default
+true). Durations must be positive safe integers in milliseconds. PATCH requires
+at least one supported field and preserves omitted fields. Names and URLs are
+trimmed; null values and unknown fields are rejected.
+
+Invalid input or IDs return 400; missing services return 404, unsupported content
+types return 415, and oversized JSON bodies return 413. Errors have the shape
+`{"error":"message"}`. Service objects contain `id`, `name`, `url`, `intervalMs`,
+`timeoutMs`, `enabled`, and `createdAt` (Unix milliseconds).

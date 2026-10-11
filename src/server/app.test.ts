@@ -5,11 +5,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { createApp } from './app.js';
+import { openDatabase } from './database.js';
 
 test('server responds to health requests and rejects unknown API routes', async (t) => {
-  const server = createApp().listen(0, '127.0.0.1');
+  const database = openDatabase(':memory:');
+  const server = createApp(database).listen(0, '127.0.0.1');
   t.after(() => new Promise<void>((resolve, reject) => {
-    server.close((error) => error ? reject(error) : resolve());
+    server.close((error) => {
+      database.close();
+      error ? reject(error) : resolve();
+    });
   }));
   await once(server, 'listening');
   const address = server.address();
@@ -31,9 +36,13 @@ test('production app serves frontend files and client routes', async (t) => {
   await writeFile(join(directory, 'index.html'), '<h1>Sentinel</h1>');
   await writeFile(join(directory, 'asset.css'), 'body { margin: 0; }');
 
-  const server = createApp(directory).listen(0, '127.0.0.1');
+  const database = openDatabase(':memory:');
+  const server = createApp(database, directory).listen(0, '127.0.0.1');
   t.after(() => new Promise<void>((resolve, reject) => {
-    server.close((error) => error ? reject(error) : resolve());
+    server.close((error) => {
+      database.close();
+      error ? reject(error) : resolve();
+    });
   }));
   await once(server, 'listening');
   const address = server.address();

@@ -15,7 +15,7 @@ const clientDirectory = process.env.NODE_ENV === 'production'
 
 const database = openDatabase(process.env.DATABASE_PATH);
 
-const server = createApp(clientDirectory).listen(port, host, () => {
+const server = createApp(database, clientDirectory).listen(port, host, () => {
   console.log(`Sentinel is listening at http://${host}:${port}`);
 });
 
