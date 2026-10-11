@@ -10,8 +10,34 @@ self-hosted service monitoring dashboard.
 - check and store latency, status and response time
 - show status of all services
 
+## Internal monitoring extension
 
-# Tasks
+Add optional Linux host and Docker monitoring through a lightweight TypeScript
+agent installed on each monitored server. The agent collects local measurements
+and sends authenticated HTTPS snapshots to Sentinel. Keep the existing React,
+Express, and SQLite architecture; no message queue or additional database is
+required initially.
+
+- Start with host uptime, CPU utilization, and total/available memory.
+- Collect container identity, image, running state, Docker health when configured,
+  CPU usage, memory usage/limit, and restart count through the local Docker API.
+- Keep HTTP availability, agent freshness, container health, and resource usage
+  separate. Missing measurements are unknown, not zero; stale reports do not prove
+  a host is down.
+- Identify containers by host and Docker container ID; names may be reused.
+- Only the agent accesses Docker. It collects measurements without remote command
+  execution or container management. A read-only socket mount does not restrict
+  Docker API operations; enforce method/path restrictions with a proxy if needed.
+- Proposed defaults to confirm in Task 9: report every 30 seconds, mark reports
+  stale after 90 seconds, and retain internal samples for seven days. Use bounded
+  retries without an unlimited offline backlog.
+- Defer filesystem usage, network traffic, disk I/O, and service-to-container
+  associations until the initial collectors work.
+
+## Tasks
+
+Tasks 1–8 deliver the HTTP-monitoring MVP. Tasks 9–16 add internal monitoring
+without replacing the existing HTTP checks or database foundation.
 
 | Step | Work | Verification |
 |---|---|---|
@@ -23,3 +49,11 @@ self-hosted service monitoring dashboard.
 | 6. History and uptime | Implement latest-result queries, uptime windows, paginated history, and retention cleanup. | Database tests for window boundaries, empty history, failures, and cleanup. |
 | 7. Dashboard | Build service overview, add/edit forms, detail history, polling, and loading/error states. | UI tests for core interactions and one end-to-end add-service-to-result flow. |
 | 8. Self-hosting package | Add container packaging, persistent storage configuration, configuration documentation, and backup instructions. | Production-build smoke test and restart test confirming history survives. |
+| 9. Internal monitoring contract | Confirm Linux support, snapshot format, metric units, CPU percentage conventions, memory/cache definitions, reporting interval, freshness threshold, and retention. Define unknown values, first-sample CPU behavior, collection/receipt timestamps, and retry limits. | Review example snapshots covering healthy hosts, unavailable metrics, absent Docker health checks, delayed reports, and collector restarts. |
+| 10. Internal monitoring database | Add a new migration for hosts, host samples, containers, and container samples with explicit metric columns, foreign keys, and time indexes. Add typed persistence functions; identify containers by host and Docker container ID. | Temporary-database tests for migration from the existing schema, preserved HTTP data, persistence, constraints, and container identity across replacements. |
+| 11. Agent registration and ingestion | Add host registration and per-host revocable tokens stored as hashes. Implement authenticated snapshot ingestion, derive host identity from the token, validate payloads and batch sizes, record receipt time, and persist snapshots transactionally. | API tests for invalid/revoked tokens, cross-host isolation, malformed/oversized payloads, duplicate snapshot handling, and atomic writes. |
+| 12. Host agent | Build a small TypeScript agent running as a Linux system service. Collect host uptime, CPU utilization from sample deltas, and memory measurements. Send HTTPS batches with bounded retries and clean shutdown; leave unavailable values unknown. | Collector fixture tests and a local ingestion integration test covering CPU warm-up/reset, missing measurements, network failures, retry limits, and shutdown. |
+| 13. Docker collector | Query the local Docker Engine API with supported-version negotiation. Discover containers and collect state, health, CPU, memory/limit, and restart count. Handle stopped/recreated containers and unavailable Docker without losing host measurements. | API fixture tests for version compatibility, CPU counter resets, memory/cache normalization, absent limits/health checks, stopped/recreated containers, and permission or connection failures. |
+| 14. Internal monitoring dashboard and history | Add host/container views, resource charts, bounded history queries, stale-data indicators, and batched retention cleanup. Display agent freshness independently from HTTP and container health. | UI/API/database tests for unknown and stale values, history boundaries, cleanup, and bounded query results; ingestion/query performance checks with representative sample volumes. |
+| 15. Agent deployment | Package the agent as a Linux system service. Document registration, token rotation/revocation, HTTPS configuration, Docker permissions, metric definitions, upgrades, and database retention. | Install/start/stop/restart smoke tests, token-revocation checks, and an end-to-end host-and-container reporting test. |
+| 16. Agent installation wizard | Build on Task 15 with a downloadable agent package and an interactive TypeScript CLI installation wizard. Guide the user through runtime/system prerequisites, backend HTTPS URL, host name, and a backend-issued per-host token from Task 11 entered without echoing. Offer optional Docker collection, verify backend authentication and Docker access, save configuration and credentials with restricted permissions, and install/start the Linux system service. Confirm the backend receives the first snapshot and show the host in the dashboard. Support rerunning the wizard without duplicating the host or overwriting existing configuration without confirmation; provide actionable failure messages and cleanup/recovery for partial installations. | End-to-end download/install/connect test on a supported Linux host; tests for missing prerequisites, invalid/revoked tokens, unreachable backend, TLS failures, unavailable Docker, protected credentials, interrupted installation, and safe reruns. |
