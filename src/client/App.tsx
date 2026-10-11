@@ -63,17 +63,19 @@ export function App() {
         </div>
 
         <div className="summary" aria-label="Service summary">
-          <span><strong>{services.length}</strong> total</span>
-          {(Object.keys(statusLabels) as ServiceStatus[]).map((serviceStatus) => {
-            const count = services.filter((service) => service.status === serviceStatus).length;
-            return (
-              <span key={serviceStatus}>
-                <span className="summary-separator" aria-hidden="true">/</span>
-                <strong className={serviceStatus === 'failing' && count > 0 ? 'failure-count' : undefined}>{count}</strong>
-                {' '}{statusLabels[serviceStatus].toLowerCase()}
-              </span>
-            );
-          })}
+          <span className="summary-total"><strong>{services.length}</strong> services</span>
+          <div className="summary-breakdown">
+            {(Object.keys(statusLabels) as ServiceStatus[]).map((serviceStatus, index) => {
+              const count = services.filter((service) => service.status === serviceStatus).length;
+              return (
+                <span key={serviceStatus}>
+                  {index > 0 && <span className="summary-separator" aria-hidden="true">/</span>}
+                  <strong className={serviceStatus === 'failing' && count > 0 ? 'failure-count' : undefined}>{count}</strong>
+                  {' '}{statusLabels[serviceStatus].toLowerCase()}
+                </span>
+              );
+            })}
+          </div>
         </div>
 
         <section aria-label="Service overview">
@@ -130,11 +132,9 @@ export function App() {
           </div>
           <div className="table-footer">
             <span role="status">Showing {filteredServices.length} of {services.length} services</span>
-            <span>Failing first / Paused services retain their last result</span>
           </div>
         </section>
 
-        <footer className="page-footer"><span>HTTP monitoring</span></footer>
       </main>
     </>
   );
