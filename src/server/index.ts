@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { createApp } from './app.js';
 import { openDatabase } from './database.js';
+import { startScheduler } from './scheduler.js';
 
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? '127.0.0.1';
@@ -14,22 +15,31 @@ const clientDirectory = process.env.NODE_ENV === 'production'
   : undefined;
 
 const database = openDatabase(process.env.DATABASE_PATH);
+const scheduler = startScheduler(database);
 
 const server = createApp(database, clientDirectory).listen(port, host, () => {
   console.log(`Sentinel is listening at http://${host}:${port}`);
 });
 
 server.once('error', (error) => {
-  database.close();
   console.error(error);
-  process.exit(1);
+  void shutdown(1);
 });
+
+let shuttingDown = false;
+async function shutdown(exitCode: number): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  await Promise.all([
+    scheduler.stop(),
+    new Promise<void>((resolve) => server.close(() => resolve())),
+  ]);
+  database.close();
+  process.exit(exitCode);
+}
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, () => {
-    server.close(() => {
-      database.close();
-      process.exit(0);
-    });
+    void shutdown(0);
   });
 }
