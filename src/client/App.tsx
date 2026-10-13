@@ -1,4 +1,6 @@
-import { Fragment, useState } from 'react';
+import { Fragment, useRef, useState } from 'react';
+import { AddService } from './AddService';
+import type { NewService } from './AddService';
 import { ServiceDetail } from './ServiceDetail';
 import {
   createHistory,
@@ -100,6 +102,9 @@ const serviceHistories = new Map(
 );
 
 export function App() {
+  const [addingService, setAddingService] = useState(false);
+  const addButton = useRef<HTMLButtonElement>(null);
+  const nextServiceId = useRef(7);
   const [serviceList, setServiceList] = useState(services);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [search, setSearch] = useState('');
@@ -125,6 +130,29 @@ export function App() {
     );
   }
 
+  function closeAddService() {
+    setAddingService(false);
+    requestAnimationFrame(() => addButton.current?.focus());
+  }
+
+  function addService(input: NewService) {
+    const service: Service = {
+      id: nextServiceId.current++,
+      name: input.name,
+      url: input.url,
+      intervalSeconds: input.intervalSeconds,
+      timeoutSeconds: input.timeoutSeconds,
+      status: input.enabled ? 'pending' : 'paused',
+      result: 'Awaiting check',
+      durationMs: null,
+      lastChecked: 'Never',
+    };
+    setServiceList((current) => [...current, service]);
+    clearFilters();
+    setExpandedId(null);
+    closeAddService();
+  }
+
   return (
     <>
       <header className="app-header">
@@ -145,6 +173,13 @@ export function App() {
             <h1>Services</h1>
             <p>HTTP availability and recent check results.</p>
           </div>
+          <button
+            ref={addButton}
+            type="button"
+            onClick={() => setAddingService(true)}
+          >
+            Add service
+          </button>
         </div>
 
         <div className="summary" aria-label="Service summary">
@@ -378,6 +413,9 @@ export function App() {
           </div>
         </section>
       </main>
+      {addingService && (
+        <AddService onClose={closeAddService} onSave={addService} />
+      )}
     </>
   );
 }
