@@ -91,9 +91,9 @@ tbody tr:hover { background: var(--surface-hover); }
 .service-name { display: block; font-weight: 600; margin-bottom: var(--space-1); }
 .endpoint { display: block; font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); }
 .monitoring-state { display: inline-flex; align-items: center; gap: var(--space-1); font-size: 12px; color: var(--text-secondary); }
-tbody td:nth-child(3) { font-weight: 500; }
-tbody td:nth-child(5) { font-weight: 500; }
-.metric:last-child { color: var(--text-muted); }
+.overview-table > tbody > tr > td:nth-child(3) { font-weight: 500; }
+.overview-table > tbody > tr > td:nth-child(5) { font-weight: 500; }
+.overview-table > tbody > tr > td:nth-child(7) { color: var(--text-muted); }
 .numeric { text-align: right; }
 .metric { font-family: var(--font-mono); font-size: 12px; font-variant-numeric: tabular-nums; }
 .failure-result { color: var(--status-failing); }
@@ -124,4 +124,49 @@ tbody td:nth-child(5) { font-weight: 500; }
   .filter-field select { flex: 1; }
   button, input, select { min-height: 36px; }
   .table-footer { flex-direction: column; gap: var(--space-1); }
+}
+
+/* Expanded service details reuse the dashboard's type, surface, and spacing scales. */
+.detail-row > td { padding: var(--space-6) var(--space-4); background: var(--surface-page); white-space: normal; }
+.service-detail { max-width: calc(100vw - 96px); }
+.detail-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
+.service-detail h2 { margin: 0; font-size: 16px; font-weight: 600; }
+.service-detail h3 { margin: 0; font-size: 13px; font-weight: 600; }
+.detail-config { display: flex; flex-wrap: wrap; gap: var(--space-4) var(--space-8); margin: var(--space-4) 0; }
+.detail-config > div { display: flex; align-items: baseline; gap: var(--space-2); }
+.detail-config .detail-url { flex-basis: 100%; }
+.detail-config dt { color: var(--text-muted); font-size: 12px; }
+.detail-config dd { margin: 0; font-family: var(--font-mono); font-size: 12px; overflow-wrap: anywhere; }
+.detail-url dd { min-width: 0; }
+.detail-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.latest-check { padding: var(--space-4) 0; border-bottom: 1px solid var(--border-section); }
+.latest-check p { margin: var(--space-1) 0; color: var(--text-secondary); }
+.latest-check strong { font-weight: 500; color: var(--text-primary); }
+.latest-check .failure-result { color: var(--status-failing); }
+.history-heading { margin-top: var(--space-6); }
+.history-summary { margin: var(--space-3) 0 var(--space-4); color: var(--text-secondary); font-size: 12px; }
+.history-summary strong { font-family: var(--font-mono); font-weight: 500; color: var(--text-primary); }
+.history-scroll { overflow-x: auto; border-top: 1px solid var(--border-section); border-bottom: 1px solid var(--border-section); }
+.history-table td, .history-table th { padding: var(--space-3); }
+.history-table td { font-weight: 400; }
+.history-table .history-error { white-space: normal; min-width: 220px; color: var(--text-secondary); font-size: 12px; }
+.history-pagination { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-top: var(--space-3); color: var(--text-muted); font-size: 12px; }
+.detail-edit, .delete-confirmation { margin-top: var(--space-4); padding: var(--space-4) 0; border-top: 1px solid var(--border-section); border-bottom: 1px solid var(--border-section); }
+.detail-edit { max-width: 480px; display: flex; flex-direction: column; gap: var(--space-3); }
+.detail-edit > label { display: flex; flex-direction: column; gap: var(--space-1); color: var(--text-secondary); font-size: 12px; }
+.detail-edit .checkbox-label { flex-direction: row; align-items: center; gap: var(--space-2); }
+.checkbox-label input { min-height: 0; margin: 0; accent-color: var(--accent); }
+.delete-confirmation p { margin: 0 0 var(--space-3); }
+.delete-confirmation button + button { margin-left: var(--space-2); }
+.delete-action { color: var(--status-failing); }
+
+@media (max-width: 760px) {
+  .detail-row > td { padding: var(--space-4) var(--space-3); }
+  .service-detail { max-width: calc(100vw - 56px); }
+  .detail-config { gap: var(--space-3) var(--space-6); }
+}
+
+@media (max-width: 480px) {
+  .history-heading { flex-wrap: wrap; }
+  .detail-config > div { flex-basis: 100%; }
 }

@@ -1,40 +1,45 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
+import { ServiceDetail } from './ServiceDetail';
+import { createHistory, historyForWindow, summarizeHistory } from './service-history';
 
 type ServiceStatus = 'healthy' | 'failing' | 'pending' | 'paused';
-type UptimeWindow = '24h' | '7d' | '30d';
+export type UptimeWindow = '24h' | '7d' | '30d';
 
-interface Service {
+export interface Service {
   id: number;
   name: string;
   url: string;
   status: ServiceStatus;
   result: string;
   durationMs: number | null;
-  uptime: Record<UptimeWindow, number | null>;
   lastChecked: string;
   intervalSeconds: number;
+  timeoutSeconds?: number;
 }
 
 const services: Service[] = [
-  { id: 1, name: 'Authentication', url: 'https://auth.example.com/health', status: 'failing', result: 'Timeout', durationMs: null, uptime: { '24h': 97.22, '7d': 99.12, '30d': 99.74 }, lastChecked: '9 seconds ago', intervalSeconds: 60 },
-  { id: 2, name: 'Billing', url: 'https://billing.example.com/health', status: 'pending', result: 'Awaiting check', durationMs: null, uptime: { '24h': null, '7d': null, '30d': null }, lastChecked: 'Never', intervalSeconds: 60 },
-  { id: 3, name: 'API', url: 'https://api.example.com/health', status: 'healthy', result: '200 OK', durationMs: 142, uptime: { '24h': 99.79, '7d': 99.94, '30d': 99.98 }, lastChecked: '12 seconds ago', intervalSeconds: 30 },
-  { id: 4, name: 'Website', url: 'https://example.com', status: 'healthy', result: '200 OK', durationMs: 86, uptime: { '24h': 100, '7d': 100, '30d': 99.99 }, lastChecked: '28 seconds ago', intervalSeconds: 60 },
-  { id: 5, name: 'Documentation', url: 'https://docs.example.com', status: 'healthy', result: '200 OK', durationMs: 110, uptime: { '24h': 100, '7d': 99.98, '30d': 99.96 }, lastChecked: '41 seconds ago', intervalSeconds: 60 },
-  { id: 6, name: 'Staging', url: 'https://staging.example.com/health', status: 'paused', result: '503 Unavailable', durationMs: 220, uptime: { '24h': 91.39, '7d': 95.68, '30d': 98.42 }, lastChecked: '3 hours ago', intervalSeconds: 120 },
+  { id: 1, name: 'Authentication', url: 'https://auth.example.com/health', status: 'failing', result: 'Timeout', durationMs: null, lastChecked: '9 seconds ago', intervalSeconds: 60 },
+  { id: 2, name: 'Billing', url: 'https://billing.example.com/health', status: 'pending', result: 'Awaiting check', durationMs: null, lastChecked: 'Never', intervalSeconds: 60 },
+  { id: 3, name: 'API', url: 'https://api.example.com/health', status: 'healthy', result: '200 OK', durationMs: 142, lastChecked: '12 seconds ago', intervalSeconds: 30 },
+  { id: 4, name: 'Website', url: 'https://example.com', status: 'healthy', result: '200 OK', durationMs: 86, lastChecked: '28 seconds ago', intervalSeconds: 60 },
+  { id: 5, name: 'Documentation', url: 'https://docs.example.com', status: 'healthy', result: '200 OK', durationMs: 110, lastChecked: '41 seconds ago', intervalSeconds: 60 },
+  { id: 6, name: 'Staging', url: 'https://staging.example.com/health', status: 'paused', result: '503 Unavailable', durationMs: 220, lastChecked: '3 hours ago', intervalSeconds: 120 },
 ];
 
 const statusLabels: Record<ServiceStatus, string> = {
   healthy: 'Healthy', failing: 'Failing', pending: 'Awaiting check', paused: 'Paused',
 };
 const uptimeWindows: Record<UptimeWindow, string> = { '24h': '24 hours', '7d': '7 days', '30d': '30 days' };
+const serviceHistories = new Map(services.map((service) => [service.id, createHistory(service)]));
 
 export function App() {
+  const [serviceList, setServiceList] = useState(services);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<ServiceStatus | 'all'>('all');
   const [uptimeWindow, setUptimeWindow] = useState<UptimeWindow>('24h');
   const query = search.trim().toLowerCase();
-  const filteredServices = services.filter((service) =>
+  const filteredServices = serviceList.filter((service) =>
     (status === 'all' || service.status === status)
     && `${service.name} ${service.url}`.toLowerCase().includes(query),
   );
@@ -43,6 +48,11 @@ export function App() {
   function clearFilters() {
     setSearch('');
     setStatus('all');
+  }
+
+  function closeDetails(id: number) {
+    setExpandedId(null);
+    document.getElementById(`service-toggle-${id}`)?.focus();
   }
 
   return (
@@ -63,10 +73,10 @@ export function App() {
         </div>
 
         <div className="summary" aria-label="Service summary">
-          <span className="summary-total"><strong>{services.length}</strong> services</span>
+          <span className="summary-total"><strong>{serviceList.length}</strong> services</span>
           <div className="summary-breakdown">
             {(Object.keys(statusLabels) as ServiceStatus[]).map((serviceStatus, index) => {
-              const count = services.filter((service) => service.status === serviceStatus).length;
+              const count = serviceList.filter((service) => service.status === serviceStatus).length;
               return (
                 <span key={serviceStatus}>
                   {index > 0 && <span className="summary-separator" aria-hidden="true">/</span>}
@@ -101,7 +111,7 @@ export function App() {
           </div>
 
           <div className="table-scroll" role="region" aria-label="Services table, scroll horizontally on small screens" tabIndex={0}>
-            <table>
+            <table className="overview-table">
               <caption className="sr-only">Service monitoring overview. Uptime over {uptimeWindows[uptimeWindow]}.</caption>
               <thead>
                 <tr>
@@ -112,26 +122,37 @@ export function App() {
                   <th scope="col" className="numeric">Uptime {uptimeWindow}</th>
                   <th scope="col">Last checked</th>
                   <th scope="col" className="numeric">Interval</th>
+                  <th scope="col"><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
               <tbody>
-                {filteredServices.map((service) => (
-                  <tr key={service.id}>
-                    <th scope="row" className="service-cell"><span className="service-name">{service.name}</span><span className="endpoint">{service.url}</span></th>
-                    <td><span className="monitoring-state"><span className={`status-dot ${service.status}`} aria-hidden="true" />{service.status === 'paused' ? 'Paused' : 'Enabled'}</span></td>
-                    <td className={service.status === 'failing' ? 'failure-result' : ''}>{service.result}</td>
-                    <td className="numeric metric">{service.durationMs === null ? '—' : `${service.durationMs} ms`}</td>
-                    <td className="numeric metric">{service.uptime[uptimeWindow] === null ? '—' : `${service.uptime[uptimeWindow].toFixed(2)}%`}</td>
-                    <td className="last-checked">{service.lastChecked}</td>
-                    <td className="numeric metric">{service.intervalSeconds} s</td>
-                  </tr>
-                ))}
-                {filteredServices.length === 0 && <tr><td colSpan={7} className="empty-state"><strong>No matching services</strong><span>Try a different name, URL, or status.</span><button type="button" onClick={clearFilters}>Clear filters</button></td></tr>}
+                {filteredServices.map((service) => {
+                  const history = serviceHistories.get(service.id) ?? [];
+                  const uptime = summarizeHistory(historyForWindow(history, uptimeWindow)).uptime;
+                  return (
+                    <Fragment key={service.id}>
+                      <tr>
+                        <th scope="row" className="service-cell"><span className="service-name">{service.name}</span><span className="endpoint">{service.url}</span></th>
+                        <td><span className="monitoring-state"><span className={`status-dot ${service.status}`} aria-hidden="true" />{service.status === 'paused' ? 'Paused' : 'Enabled'}</span></td>
+                        <td className={service.status === 'failing' ? 'failure-result' : ''}>{service.result}</td>
+                        <td className="numeric metric">{service.durationMs === null ? '—' : `${service.durationMs} ms`}</td>
+                        <td className="numeric metric">{uptime === null ? '—' : `${uptime.toFixed(2)}%`}</td>
+                        <td className="last-checked">{service.lastChecked}</td>
+                        <td className="numeric metric">{service.intervalSeconds} s</td>
+                        <td><button id={`service-toggle-${service.id}`} type="button" aria-label={`${expandedId === service.id ? 'Close' : 'Show'} details for ${service.name}`} aria-expanded={expandedId === service.id} aria-controls={expandedId === service.id ? `service-detail-${service.id}` : undefined} onClick={() => setExpandedId(expandedId === service.id ? null : service.id)}>{expandedId === service.id ? 'Close details' : 'Details'}</button></td>
+                      </tr>
+                      {expandedId === service.id && <tr className="detail-row"><td colSpan={8}>
+                        <ServiceDetail service={service} history={history} onClose={() => closeDetails(service.id)} onUpdate={(updated) => setServiceList((current) => current.map((item) => item.id === updated.id ? updated : item))} onDelete={() => { setServiceList((current) => current.filter((item) => item.id !== service.id)); setExpandedId(null); }} />
+                      </td></tr>}
+                    </Fragment>
+                  );
+                })}
+                {filteredServices.length === 0 && <tr><td colSpan={8} className="empty-state"><strong>{serviceList.length === 0 ? 'No services' : 'No matching services'}</strong><span>{serviceList.length === 0 ? 'There are no services to display.' : 'Try a different name, URL, or status.'}</span>{filtersActive && <button type="button" onClick={clearFilters}>Clear filters</button>}</td></tr>}
               </tbody>
             </table>
           </div>
           <div className="table-footer">
-            <span role="status">Showing {filteredServices.length} of {services.length} services</span>
+            <span role="status">Showing {filteredServices.length} of {serviceList.length} services</span>
           </div>
         </section>
 
