@@ -31,11 +31,15 @@ const migrations = [
 export function migrate(database: DatabaseSync): void {
   database.exec('BEGIN IMMEDIATE');
   try {
-    const { user_version: version } = database.prepare('PRAGMA user_version').get() as {
+    const { user_version: version } = database
+      .prepare('PRAGMA user_version')
+      .get() as {
       user_version: number;
     };
     if (version > migrations.length) {
-      throw new Error(`Database version ${version} is newer than this application supports`);
+      throw new Error(
+        `Database version ${version} is newer than this application supports`,
+      );
     }
 
     for (let index = version; index < migrations.length; index++) {

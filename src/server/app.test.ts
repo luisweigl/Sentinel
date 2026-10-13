@@ -10,12 +10,15 @@ import { openDatabase } from './database.js';
 test('server responds to health requests and rejects unknown API routes', async (t) => {
   const database = openDatabase(':memory:');
   const server = createApp(database).listen(0, '127.0.0.1');
-  t.after(() => new Promise<void>((resolve, reject) => {
-    server.close((error) => {
-      database.close();
-      error ? reject(error) : resolve();
-    });
-  }));
+  t.after(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+          database.close();
+          error ? reject(error) : resolve();
+        });
+      }),
+  );
   await once(server, 'listening');
   const address = server.address();
   assert.ok(address && typeof address !== 'string');
@@ -38,12 +41,15 @@ test('production app serves frontend files and client routes', async (t) => {
 
   const database = openDatabase(':memory:');
   const server = createApp(database, directory).listen(0, '127.0.0.1');
-  t.after(() => new Promise<void>((resolve, reject) => {
-    server.close((error) => {
-      database.close();
-      error ? reject(error) : resolve();
-    });
-  }));
+  t.after(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+          database.close();
+          error ? reject(error) : resolve();
+        });
+      }),
+  );
   await once(server, 'listening');
   const address = server.address();
   assert.ok(address && typeof address !== 'string');

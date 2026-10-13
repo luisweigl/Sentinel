@@ -1,7 +1,11 @@
 import { Router } from 'express';
 import type { DatabaseSync } from 'node:sqlite';
 import {
-  createService, deleteService, listServices, updateService, type ServiceInput,
+  createService,
+  deleteService,
+  listServices,
+  updateService,
+  type ServiceInput,
 } from './persistence.js';
 
 function validateInput(body: unknown, partial: boolean): Partial<ServiceInput> {
@@ -41,8 +45,14 @@ function validateInput(body: unknown, partial: boolean): Partial<ServiceInput> {
   for (const key of ['intervalMs', 'timeoutMs'] as const) {
     if (Object.hasOwn(input, key)) {
       const value = input[key];
-      if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
-        throw new Error(`${key} must be a positive safe integer in milliseconds`);
+      if (
+        typeof value !== 'number' ||
+        !Number.isSafeInteger(value) ||
+        value <= 0
+      ) {
+        throw new Error(
+          `${key} must be a positive safe integer in milliseconds`,
+        );
       }
       result[key] = value;
     }
@@ -60,8 +70,13 @@ export function serviceRoutes(database: DatabaseSync): Router {
   const router = Router();
 
   router.use((request, response, next) => {
-    if (['POST', 'PATCH'].includes(request.method) && !request.is('application/json')) {
-      response.status(415).json({ error: 'Content-Type must be application/json' });
+    if (
+      ['POST', 'PATCH'].includes(request.method) &&
+      !request.is('application/json')
+    ) {
+      response
+        .status(415)
+        .json({ error: 'Content-Type must be application/json' });
       return;
     }
     next();
@@ -69,7 +84,9 @@ export function serviceRoutes(database: DatabaseSync): Router {
 
   router.param('id', (request, response, next, value: string) => {
     if (!/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(Number(value))) {
-      response.status(400).json({ error: 'Service ID must be a positive safe integer' });
+      response
+        .status(400)
+        .json({ error: 'Service ID must be a positive safe integer' });
       return;
     }
     next();

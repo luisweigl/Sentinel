@@ -32,7 +32,9 @@ export async function checkService(
       responseTimeMs: performance.now() - startedAt,
       error: signal?.aborted
         ? `Check timed out after ${service.timeoutMs} ms`
-        : error instanceof Error ? error.message : String(error),
+        : error instanceof Error
+          ? error.message
+          : String(error),
     };
   }
 }

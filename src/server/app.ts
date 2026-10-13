@@ -27,14 +27,21 @@ export function createApp(database: DatabaseSync, clientDirectory?: string) {
     });
   }
 
-  const handleError: ErrorRequestHandler = (error: unknown, _request, response, next) => {
+  const handleError: ErrorRequestHandler = (
+    error: unknown,
+    _request,
+    response,
+    next,
+  ) => {
     if (response.headersSent) {
       next(error);
       return;
     }
     const status = (error as { status?: number } | null)?.status;
     if (status === 400 || status === 413) {
-      response.status(status).json({ error: status === 400 ? 'Invalid JSON body' : 'Request body too large' });
+      response.status(status).json({
+        error: status === 400 ? 'Invalid JSON body' : 'Request body too large',
+      });
       return;
     }
     console.error(error);

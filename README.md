@@ -74,11 +74,11 @@ is rejected. Tests use temporary databases, never the configured application fil
 
 ## Service management API
 
-| Method | Path | Result |
-|---|---|---|
-| GET | `/api/services` | List service configurations (200). |
-| POST | `/api/services` | Create a service (201). |
-| PATCH | `/api/services/:id` | Edit fields, including `enabled` (200). |
+| Method | Path                | Result                                        |
+| ------ | ------------------- | --------------------------------------------- |
+| GET    | `/api/services`     | List service configurations (200).            |
+| POST   | `/api/services`     | Create a service (201).                       |
+| PATCH  | `/api/services/:id` | Edit fields, including `enabled` (200).       |
 | DELETE | `/api/services/:id` | Delete a service and its check results (204). |
 
 POST and PATCH require `Content-Type: application/json`. Creation requires `name`

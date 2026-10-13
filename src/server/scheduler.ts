@@ -1,8 +1,12 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { checkService } from './health-checker.js';
 import {
-  getLatestCheckResult, getService, listServices, saveCheckResult,
-  type CheckResultInput, type Service,
+  getLatestCheckResult,
+  getService,
+  listServices,
+  saveCheckResult,
+  type CheckResultInput,
+  type Service,
 } from './persistence.js';
 
 interface SchedulerOptions {
@@ -13,7 +17,10 @@ interface SchedulerOptions {
 }
 
 /** Polls for due work; intervals are measured from the previous check's start. */
-export function startScheduler(database: DatabaseSync, options: SchedulerOptions = {}) {
+export function startScheduler(
+  database: DatabaseSync,
+  options: SchedulerOptions = {},
+) {
   const concurrency = options.concurrency ?? 4;
   const pollIntervalMs = options.pollIntervalMs ?? 1000;
   for (const [name, value] of Object.entries({ concurrency, pollIntervalMs })) {
@@ -51,11 +58,16 @@ export function startScheduler(database: DatabaseSync, options: SchedulerOptions
           service,
           lastCheck: getLatestCheckResult(database, service.id)?.checkedAt,
         }))
-        .filter(({ service, lastCheck }) => lastCheck === undefined
-          || now - lastCheck >= service.intervalMs)
+        .filter(
+          ({ service, lastCheck }) =>
+            lastCheck === undefined || now - lastCheck >= service.intervalMs,
+        )
         // Give waiting services priority over services just checked.
-        .sort((a, b) => (a.lastCheck ?? -Infinity) - (b.lastCheck ?? -Infinity)
-          || a.service.id - b.service.id);
+        .sort(
+          (a, b) =>
+            (a.lastCheck ?? -Infinity) - (b.lastCheck ?? -Infinity) ||
+            a.service.id - b.service.id,
+        );
       for (const { service } of due) {
         if (active.size >= concurrency) break;
         // Defer execution so even a synchronous checker failure sees its active entry.
