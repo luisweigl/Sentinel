@@ -1,20 +1,15 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import type { Service, UptimeWindow } from './App';
-import {
-  historyForWindow,
-  historyPage,
-  historyPageSize,
-  summarizeHistory,
-} from './service-history';
-import type { CheckResult } from './service-history';
+import type { Service, UptimeWindow } from './types';
+import { loadHistory } from './api';
+import type { HistoryData } from './types';
 
 interface Props {
   service: Service;
-  history: CheckResult[];
+  refreshKey?: number;
   onClose: () => void;
-  onUpdate: (service: Service) => void;
-  onDelete: () => void;
+  onUpdate: (service: Service) => void | Promise<void>;
+  onDelete: () => void | Promise<void>;
 }
 
 const formatTime = new Intl.DateTimeFormat(undefined, {
@@ -28,7 +23,7 @@ const formatTime = new Intl.DateTimeFormat(undefined, {
 
 export function ServiceDetail({
   service,
-  history,
+  refreshKey = 0,
   onClose,
   onUpdate,
   onDelete,
@@ -39,21 +34,86 @@ export function ServiceDetail({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [formError, setFormError] = useState('');
   const editButton = useRef<HTMLButtonElement>(null);
-  const filtered = useMemo(
-    () => historyForWindow(history, window),
-    [history, window],
-  );
-  const summary = summarizeHistory(filtered);
-  const pages = Math.max(1, Math.ceil(filtered.length / historyPageSize));
-  const latest = history[0];
+  const [data, setData] = useState<HistoryData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [retry, setRetry] = useState(0);
+  const [pending, setPending] = useState(false);
+  const [actionError, setActionError] = useState('');
+  const snapshot = useRef<number | undefined>(undefined);
+  const pages = Math.max(1, Math.ceil((data?.total ?? 0) / 6));
+  const latest = service.latestCheck ?? data?.latest;
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    setData(null);
+    setLoading(true);
+    setLoadError('');
+    async function refresh() {
+      try {
+        const result = await loadHistory(
+          service.id,
+          window,
+          page,
+          controller.signal,
+          page === 1 ? undefined : snapshot.current,
+        );
+        if (!controller.signal.aborted) {
+          snapshot.current = result.asOf;
+          const lastPage = Math.max(1, Math.ceil(result.total / 6));
+          if (page > lastPage) {
+            setPage(lastPage);
+            return;
+          }
+          setData(result);
+          setLoadError('');
+        }
+      } catch (error) {
+        if (!controller.signal.aborted)
+          setLoadError(
+            error instanceof Error ? error.message : 'Unable to load history.',
+          );
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+          timer = setTimeout(refresh, 10_000);
+        }
+      }
+    }
+    void refresh();
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [service.id, window, page, refreshKey, retry]);
+
+  async function perform(
+    action: () => void | Promise<void>,
+    after?: () => void,
+  ) {
+    if (pending) return;
+    setPending(true);
+    setActionError('');
+    try {
+      await action();
+      after?.();
+    } catch (error) {
+      setActionError(
+        error instanceof Error ? error.message : 'Unable to save changes.',
+      );
+    } finally {
+      setPending(false);
+    }
+  }
 
   function finishEditing() {
     setEditing(false);
     setFormError('');
-    editButton.current?.focus();
+    requestAnimationFrame(() => editButton.current?.focus());
   }
 
-  function save(event: FormEvent<HTMLFormElement>) {
+  async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const name = String(data.get('name') ?? '').trim();
@@ -78,15 +138,18 @@ export function ServiceDetail({
       return;
     }
     const enabled = data.get('enabled') === 'on';
-    onUpdate({
-      ...service,
-      name,
-      url,
-      intervalSeconds,
-      timeoutSeconds,
-      status: enabled ? resultStatus() : 'paused',
-    });
-    finishEditing();
+    await perform(
+      () =>
+        onUpdate({
+          ...service,
+          name,
+          url,
+          intervalSeconds,
+          timeoutSeconds,
+          status: enabled ? resultStatus() : 'paused',
+        }),
+      finishEditing,
+    );
   }
 
   function resultStatus(): Service['status'] {
@@ -105,7 +168,7 @@ export function ServiceDetail({
     >
       <div className="detail-heading">
         <h2 id={`detail-title-${service.id}`}>{service.name}</h2>
-        <button type="button" autoFocus onClick={onClose}>
+        <button disabled={pending} type="button" autoFocus onClick={onClose}>
           Close details
         </button>
       </div>
@@ -129,12 +192,15 @@ export function ServiceDetail({
       </dl>
       <div className="detail-actions">
         <button
+          disabled={pending}
           type="button"
           onClick={() =>
-            onUpdate({
-              ...service,
-              status: service.status === 'paused' ? resultStatus() : 'paused',
-            })
+            void perform(() =>
+              onUpdate({
+                ...service,
+                status: service.status === 'paused' ? resultStatus() : 'paused',
+              }),
+            )
           }
         >
           {service.status === 'paused'
@@ -142,6 +208,7 @@ export function ServiceDetail({
             : 'Pause monitoring'}
         </button>
         <button
+          disabled={pending}
           type="button"
           ref={editButton}
           onClick={() => {
@@ -152,6 +219,7 @@ export function ServiceDetail({
           Edit service
         </button>
         <button
+          disabled={pending}
           type="button"
           onClick={() => {
             setConfirmDelete(true);
@@ -161,6 +229,11 @@ export function ServiceDetail({
           Delete service
         </button>
       </div>
+      {actionError && (
+        <p className="failure-result" role="alert">
+          {actionError}
+        </p>
+      )}
       {confirmDelete && (
         <div
           className="delete-confirmation"
@@ -171,24 +244,45 @@ export function ServiceDetail({
             Delete {service.name} and all its check history? This cannot be
             undone.
           </p>
-          <button type="button" className="delete-action" onClick={onDelete}>
+          <button
+            disabled={pending}
+            type="button"
+            className="delete-action"
+            onClick={() => void perform(onDelete)}
+          >
             Delete service and history
           </button>
-          <button type="button" onClick={() => setConfirmDelete(false)}>
+          <button
+            disabled={pending}
+            type="button"
+            onClick={() => setConfirmDelete(false)}
+          >
             Cancel
           </button>
         </div>
       )}
       {editing && (
-        <form className="detail-edit" onSubmit={save}>
+        <form className="detail-edit" aria-busy={pending} onSubmit={save}>
           <h3>Edit service</h3>
           <label>
             Name
-            <input name="name" defaultValue={service.name} required autoFocus />
+            <input
+              name="name"
+              defaultValue={service.name}
+              disabled={pending}
+              required
+              autoFocus
+            />
           </label>
           <label>
             HTTP / HTTPS URL
-            <input name="url" type="url" defaultValue={service.url} required />
+            <input
+              name="url"
+              type="url"
+              defaultValue={service.url}
+              disabled={pending}
+              required
+            />
           </label>
           <label>
             Check interval (seconds)
@@ -198,6 +292,7 @@ export function ServiceDetail({
               min="0.001"
               step="0.001"
               defaultValue={service.intervalSeconds}
+              disabled={pending}
               required
             />
           </label>
@@ -209,6 +304,7 @@ export function ServiceDetail({
               min="0.001"
               step="0.001"
               defaultValue={service.timeoutSeconds ?? 10}
+              disabled={pending}
               required
             />
           </label>
@@ -217,6 +313,7 @@ export function ServiceDetail({
               name="enabled"
               type="checkbox"
               defaultChecked={service.status !== 'paused'}
+              disabled={pending}
             />
             Monitoring enabled
           </label>
@@ -226,10 +323,12 @@ export function ServiceDetail({
             </p>
           )}
           <div className="detail-actions">
-            <button type="button" onClick={finishEditing}>
+            <button disabled={pending} type="button" onClick={finishEditing}>
               Cancel
             </button>
-            <button type="submit">Save service</button>
+            <button disabled={pending} type="submit">
+              Save service
+            </button>
           </div>
         </form>
       )}
@@ -258,6 +357,7 @@ export function ServiceDetail({
           <select
             value={window}
             onChange={(event) => {
+              snapshot.current = undefined;
               setWindow(event.target.value as UptimeWindow);
               setPage(1);
             }}
@@ -271,12 +371,31 @@ export function ServiceDetail({
       <p className="history-summary">
         Uptime:{' '}
         <strong>
-          {summary.uptime === null ? '—' : `${summary.uptime.toFixed(2)}%`}
+          {loading || loadError || data?.uptime == null
+            ? '—'
+            : `${data.uptime.toFixed(2)}%`}
         </strong>{' '}
-        / {summary.successful} successful / {summary.total} completed checks
+        {data && (
+          <>
+            {' '}
+            / {data.successful} successful / {data.total} completed checks
+          </>
+        )}
       </p>
+      {loadError && (
+        <p role="alert" className="failure-result">
+          {loadError}{' '}
+          <button
+            type="button"
+            onClick={() => setRetry((current) => current + 1)}
+          >
+            Retry
+          </button>
+        </p>
+      )}
       <div
         className="history-scroll"
+        aria-busy={loading}
         role="region"
         aria-label="Check history, scroll horizontally on small screens"
         tabIndex={0}
@@ -299,31 +418,42 @@ export function ServiceDetail({
             </tr>
           </thead>
           <tbody>
-            {historyPage(filtered, page).map((check) => (
-              <tr key={check.checkedAt}>
-                <td className="last-checked">
-                  <time dateTime={new Date(check.checkedAt).toISOString()}>
-                    {formatTime.format(check.checkedAt)}
-                  </time>
+            {!loading &&
+              !loadError &&
+              data?.results.map((check) => (
+                <tr key={check.id}>
+                  <td className="last-checked">
+                    <time dateTime={new Date(check.checkedAt).toISOString()}>
+                      {formatTime.format(check.checkedAt)}
+                    </time>
+                  </td>
+                  <td
+                    className={
+                      check.result !== 'Healthy' ? 'failure-result' : undefined
+                    }
+                  >
+                    {check.result}
+                  </td>
+                  <td className="numeric metric">{check.httpStatus ?? '—'}</td>
+                  <td className="numeric metric">
+                    {check.durationMs === null
+                      ? '—'
+                      : `${Math.round(check.durationMs)} ms`}
+                  </td>
+                  <td className="history-error">{check.error ?? '—'}</td>
+                </tr>
+              ))}
+            {loading && (
+              <tr>
+                <td colSpan={5} className="empty-state" role="status">
+                  Loading history…
                 </td>
-                <td
-                  className={
-                    check.result !== 'Healthy' ? 'failure-result' : undefined
-                  }
-                >
-                  {check.result}
-                </td>
-                <td className="numeric metric">{check.httpStatus ?? '—'}</td>
-                <td className="numeric metric">
-                  {check.durationMs === null ? '—' : `${check.durationMs} ms`}
-                </td>
-                <td className="history-error">{check.error ?? '—'}</td>
               </tr>
-            ))}
-            {filtered.length === 0 && (
+            )}
+            {!loading && !loadError && data?.results.length === 0 && (
               <tr>
                 <td colSpan={5} className="empty-state">
-                  No checks recorded yet.
+                  No checks recorded in this window.
                 </td>
               </tr>
             )}
@@ -336,17 +466,17 @@ export function ServiceDetail({
       >
         <button
           type="button"
-          disabled={page === 1}
+          disabled={loading || !!loadError || page === 1}
           onClick={() => setPage(page - 1)}
         >
           Previous
         </button>
         <span role="status">
-          Page {page} of {pages}
+          Page {page} of {loading || loadError ? '—' : pages}
         </span>
         <button
           type="button"
-          disabled={page >= pages}
+          disabled={loading || !!loadError || page >= pages}
           onClick={() => setPage(page + 1)}
         >
           Next

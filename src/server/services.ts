@@ -4,6 +4,11 @@ import {
   createService,
   deleteService,
   listServices,
+  getService,
+  listLatestCheckResults,
+  getLatestCheckResult,
+  getServiceUptime,
+  getCheckHistory,
   updateService,
   type ServiceInput,
 } from './persistence.js';
@@ -94,6 +99,88 @@ export function serviceRoutes(database: DatabaseSync): Router {
 
   router.get('/', (_request, response) => {
     response.json(listServices(database));
+  });
+
+  const windowDurations = {
+    '24h': 86_400_000,
+    '7d': 604_800_000,
+    '30d': 2_592_000_000,
+  };
+  function readWindow(query: Record<string, unknown>) {
+    const value = query.window ?? '24h';
+    if (typeof value !== 'string' || !Object.hasOwn(windowDurations, value)) {
+      throw new Error('window must be 24h, 7d, or 30d');
+    }
+    const to = query.to === undefined ? Date.now() : Number(query.to);
+    if (
+      (query.to !== undefined &&
+        (typeof query.to !== 'string' || !/^\d+$/.test(query.to))) ||
+      !Number.isSafeInteger(to) ||
+      to < 0 ||
+      to > Date.now()
+    ) {
+      throw new Error('to must be a non-negative timestamp no later than now');
+    }
+    return {
+      from: Math.max(
+        0,
+        to - windowDurations[value as keyof typeof windowDurations],
+      ),
+      to,
+    };
+  }
+
+  router.get('/overview', (request, response) => {
+    let window;
+    try {
+      window = readWindow(request.query);
+    } catch (error) {
+      response.status(400).json({ error: (error as Error).message });
+      return;
+    }
+    const latest = new Map(
+      listLatestCheckResults(database).map((check) => [check.serviceId, check]),
+    );
+    response.json({
+      services: listServices(database).map((service) => ({
+        ...service,
+        latestResult: latest.get(service.id) ?? null,
+        uptime: getServiceUptime(database, service.id, window),
+      })),
+      asOf: window.to,
+    });
+  });
+
+  router.get('/:id/history', (request, response) => {
+    const id = Number(request.params.id);
+    if (!getService(database, id)) {
+      response.status(404).json({ error: 'Service not found' });
+      return;
+    }
+    let window;
+    let page;
+    try {
+      window = readWindow(request.query);
+      const value = request.query.page ?? '1';
+      if (typeof value !== 'string' || !/^[1-9]\d*$/.test(value))
+        throw new Error('page must be a positive safe integer');
+      page = Number(value);
+      if (!Number.isSafeInteger(page) || !Number.isSafeInteger((page - 1) * 6))
+        throw new Error('page must be a positive safe integer');
+    } catch (error) {
+      response.status(400).json({ error: (error as Error).message });
+      return;
+    }
+    response.json({
+      latestResult: getLatestCheckResult(database, id) ?? null,
+      uptime: getServiceUptime(database, id, window),
+      history: getCheckHistory(database, id, {
+        window,
+        limit: 6,
+        offset: (page - 1) * 6,
+      }),
+      asOf: window.to,
+    });
   });
 
   router.post('/', (request, response) => {

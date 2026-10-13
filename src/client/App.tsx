@@ -1,90 +1,15 @@
-import { Fragment, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { AddService } from './AddService';
 import type { NewService } from './AddService';
 import { ServiceDetail } from './ServiceDetail';
 import {
-  createHistory,
-  historyForWindow,
-  summarizeHistory,
-} from './service-history';
-
-type ServiceStatus = 'healthy' | 'failing' | 'pending' | 'paused';
-export type UptimeWindow = '24h' | '7d' | '30d';
-
-export interface Service {
-  id: number;
-  name: string;
-  url: string;
-  status: ServiceStatus;
-  result: string;
-  durationMs: number | null;
-  lastChecked: string;
-  intervalSeconds: number;
-  timeoutSeconds?: number;
-}
-
-const services: Service[] = [
-  {
-    id: 1,
-    name: 'Authentication',
-    url: 'https://auth.example.com/health',
-    status: 'failing',
-    result: 'Timeout',
-    durationMs: null,
-    lastChecked: '9 seconds ago',
-    intervalSeconds: 60,
-  },
-  {
-    id: 2,
-    name: 'Billing',
-    url: 'https://billing.example.com/health',
-    status: 'pending',
-    result: 'Awaiting check',
-    durationMs: null,
-    lastChecked: 'Never',
-    intervalSeconds: 60,
-  },
-  {
-    id: 3,
-    name: 'API',
-    url: 'https://api.example.com/health',
-    status: 'healthy',
-    result: '200 OK',
-    durationMs: 142,
-    lastChecked: '12 seconds ago',
-    intervalSeconds: 30,
-  },
-  {
-    id: 4,
-    name: 'Website',
-    url: 'https://example.com',
-    status: 'healthy',
-    result: '200 OK',
-    durationMs: 86,
-    lastChecked: '28 seconds ago',
-    intervalSeconds: 60,
-  },
-  {
-    id: 5,
-    name: 'Documentation',
-    url: 'https://docs.example.com',
-    status: 'healthy',
-    result: '200 OK',
-    durationMs: 110,
-    lastChecked: '41 seconds ago',
-    intervalSeconds: 60,
-  },
-  {
-    id: 6,
-    name: 'Staging',
-    url: 'https://staging.example.com/health',
-    status: 'paused',
-    result: '503 Unavailable',
-    durationMs: 220,
-    lastChecked: '3 hours ago',
-    intervalSeconds: 120,
-  },
-];
+  createService,
+  loadOverview,
+  removeService,
+  toService,
+  updateService,
+} from './api';
+import type { Service, ServiceStatus, UptimeWindow } from './types';
 
 const statusLabels: Record<ServiceStatus, string> = {
   healthy: 'Healthy',
@@ -97,19 +22,55 @@ const uptimeWindows: Record<UptimeWindow, string> = {
   '7d': '7 days',
   '30d': '30 days',
 };
-const serviceHistories = new Map(
-  services.map((service) => [service.id, createHistory(service)]),
-);
-
 export function App() {
   const [addingService, setAddingService] = useState(false);
   const addButton = useRef<HTMLButtonElement>(null);
-  const nextServiceId = useRef(7);
-  const [serviceList, setServiceList] = useState(services);
+  const overviewRequest = useRef<AbortController | null>(null);
+  const [revision, setRevision] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [serviceList, setServiceList] = useState<Service[]>([]);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<ServiceStatus | 'all'>('all');
   const [uptimeWindow, setUptimeWindow] = useState<UptimeWindow>('24h');
+  useEffect(() => {
+    const controller = new AbortController();
+    overviewRequest.current = controller;
+    let timer: ReturnType<typeof setTimeout>;
+    setLoading(true);
+    setLoadError('');
+    async function refresh() {
+      try {
+        const services = await loadOverview(uptimeWindow, controller.signal);
+        if (!controller.signal.aborted) {
+          setServiceList(services);
+          setLoadError('');
+        }
+      } catch (error) {
+        if (!controller.signal.aborted)
+          setLoadError(
+            error instanceof Error ? error.message : 'Unable to load services.',
+          );
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+          timer = setTimeout(refresh, 10_000);
+        }
+      }
+    }
+    void refresh();
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [uptimeWindow, revision]);
+
+  function refreshOverview() {
+    overviewRequest.current?.abort();
+    setRevision((current) => current + 1);
+  }
+
   const query = search.trim().toLowerCase();
   const filteredServices = serviceList.filter(
     (service) =>
@@ -135,22 +96,36 @@ export function App() {
     requestAnimationFrame(() => addButton.current?.focus());
   }
 
-  function addService(input: NewService) {
-    const service: Service = {
-      id: nextServiceId.current++,
-      name: input.name,
-      url: input.url,
-      intervalSeconds: input.intervalSeconds,
-      timeoutSeconds: input.timeoutSeconds,
-      status: input.enabled ? 'pending' : 'paused',
-      result: 'Awaiting check',
-      durationMs: null,
-      lastChecked: 'Never',
-    };
-    setServiceList((current) => [...current, service]);
+  async function addService(input: NewService) {
+    const stored = await createService(input);
+    setServiceList((current) => [...current, toService(stored)]);
     clearFilters();
     setExpandedId(null);
     closeAddService();
+    refreshOverview();
+  }
+
+  async function saveService(updated: Service) {
+    const stored = await updateService(updated);
+    setServiceList((current) =>
+      current.map((item) =>
+        item.id === stored.id
+          ? toService(
+              stored,
+              item.latestCheck ?? null,
+              item.uptimePercent ?? null,
+            )
+          : item,
+      ),
+    );
+    refreshOverview();
+  }
+
+  async function deleteService(id: number) {
+    await removeService(id);
+    setServiceList((current) => current.filter((item) => item.id !== id));
+    setExpandedId(null);
+    refreshOverview();
   }
 
   return (
@@ -216,7 +191,15 @@ export function App() {
           </div>
         </div>
 
-        <section aria-label="Service overview">
+        <section aria-label="Service overview" aria-busy={loading}>
+          {loadError && (
+            <p role="alert" className="failure-result">
+              {loadError}{' '}
+              <button type="button" onClick={refreshOverview}>
+                Retry
+              </button>
+            </p>
+          )}
           <div className="toolbar">
             <label className="search-field">
               <span className="sr-only">Search services by name or URL</span>
@@ -302,10 +285,7 @@ export function App() {
               </thead>
               <tbody>
                 {filteredServices.map((service) => {
-                  const history = serviceHistories.get(service.id) ?? [];
-                  const uptime = summarizeHistory(
-                    historyForWindow(history, uptimeWindow),
-                  ).uptime;
+                  const uptime = service.uptimePercent ?? null;
                   return (
                     <Fragment key={service.id}>
                       <tr>
@@ -332,10 +312,12 @@ export function App() {
                         <td className="numeric metric">
                           {service.durationMs === null
                             ? '—'
-                            : `${service.durationMs} ms`}
+                            : `${Math.round(service.durationMs)} ms`}
                         </td>
                         <td className="numeric metric">
-                          {uptime === null ? '—' : `${uptime.toFixed(2)}%`}
+                          {loading || loadError || uptime === null
+                            ? '—'
+                            : `${uptime.toFixed(2)}%`}
                         </td>
                         <td className="last-checked">{service.lastChecked}</td>
                         <td className="numeric metric">
@@ -358,23 +340,10 @@ export function App() {
                           <td colSpan={8}>
                             <ServiceDetail
                               service={service}
-                              history={history}
+                              refreshKey={revision}
                               onClose={() => closeDetails(service.id)}
-                              onUpdate={(updated) =>
-                                setServiceList((current) =>
-                                  current.map((item) =>
-                                    item.id === updated.id ? updated : item,
-                                  ),
-                                )
-                              }
-                              onDelete={() => {
-                                setServiceList((current) =>
-                                  current.filter(
-                                    (item) => item.id !== service.id,
-                                  ),
-                                );
-                                setExpandedId(null);
-                              }}
+                              onUpdate={saveService}
+                              onDelete={() => deleteService(service.id)}
                             />
                           </td>
                         </tr>
@@ -382,7 +351,14 @@ export function App() {
                     </Fragment>
                   );
                 })}
-                {filteredServices.length === 0 && (
+                {loading && serviceList.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="empty-state" role="status">
+                      Loading services…
+                    </td>
+                  </tr>
+                )}
+                {!loading && !loadError && filteredServices.length === 0 && (
                   <tr>
                     <td colSpan={8} className="empty-state">
                       <strong>

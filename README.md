@@ -1,8 +1,9 @@
 # Sentinel
 
-Self-hosted service monitoring dashboard. This initial foundation contains a React
-placeholder, an Express server, and SQLite persistence. Monitoring features are
-not yet implemented. See [PROJECT.md](PROJECT.md) for the implementation plan.
+Self-hosted service monitoring dashboard built with React, Express, and SQLite.
+The dashboard uses the API for service management, latest check results, uptime,
+and paginated history, refreshing monitoring data every ten seconds.
+See [PROJECT.md](PROJECT.md) for the implementation plan.
 
 ## Requirements
 
@@ -64,8 +65,8 @@ The database stores service configuration and check results, including nullable
 HTTP status, response time, and error information. Timestamps are Unix milliseconds;
 intervals and durations are milliseconds. Deleting a service also deletes its
 check results. Typed persistence functions live in `src/server/persistence.ts`.
-Service management is available through the API below. Automatic checks are not
-implemented yet.
+Service management is available through the API below. The scheduler automatically
+checks enabled services and stores results in SQLite.
 
 Schema migrations are ordered SQL entries in `src/server/migrations.ts`, tracked
 with SQLite's `user_version` and applied in a transaction. Add new entries rather
@@ -92,3 +93,17 @@ Invalid input or IDs return 400; missing services return 404, unsupported conten
 types return 415, and oversized JSON bodies return 413. Errors have the shape
 `{"error":"message"}`. Service objects contain `id`, `name`, `url`, `intervalMs`,
 `timeoutMs`, `enabled`, and `createdAt` (Unix milliseconds).
+
+## Dashboard read API
+
+- `GET /api/services/overview?window=24h` returns service configurations with each
+  service's latest result and uptime summary, plus the snapshot timestamp `asOf`.
+- `GET /api/services/:id/history?window=24h&page=1` returns the latest result,
+  uptime summary, and a newest-first history page of six results, including the
+  total matching count and `asOf` timestamp. Missing services return 404.
+
+Both routes accept `window=24h`, `7d`, or `30d` (default `24h`). An optional `to`
+Unix timestamp in milliseconds fixes the window end for consistent pagination;
+it must be a non-negative safe integer no later than the current time. Windows
+include their start and exclude their end. Invalid query values return 400.
+Services without checks have a null latest result and null uptime, not zero uptime.
