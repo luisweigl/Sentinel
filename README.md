@@ -39,57 +39,96 @@ another database file. Tests use temporary databases.
 
 ## Self-hosting with Docker
 
-Requirements: Docker Engine and the Docker Compose plugin. From a checkout:
+Sentinel runs as a single container with the dashboard, API, and service checker.
+Docker Compose builds the image and creates a persistent SQLite data volume. You
+only need Git, Docker Engine, and the Docker Compose plugin on the host; Node.js
+and npm are included in the image.
 
-```sh
-docker compose up --build -d
-docker compose ps
-curl --fail http://127.0.0.1:3000/api/health
-docker compose logs --tail=100 -f sentinel
-```
+### Install and start
 
-Open http://127.0.0.1:3000. One non-root Node process serves the built dashboard,
-API, and scheduler. The image uses Node 22.22.0 and installs dependencies from the
-lockfile. The health check verifies HTTP availability; it does not indicate that
-all monitored services are healthy. Docker marks failed probes unhealthy; the
-restart policy restarts exited processes, not merely unhealthy ones.
+1. Install Docker Engine and the Docker Compose plugin for your operating system.
+   Start Docker and confirm your user can access it:
 
-The default port mapping only allows access from the Docker host. To change the
-host port, change `127.0.0.1:3000:3000` in `compose.yaml`, for example to
-`127.0.0.1:8080:3000`. To allow trusted LAN clients, replace `127.0.0.1` with the
-host's LAN address. Sentinel currently has no application authentication: protect
-access using your network or an authenticating reverse proxy. For HTTPS, configure
-your existing reverse proxy to forward to `http://127.0.0.1:3000`. A proxy running
-in a container needs a shared Docker network and the upstream `http://sentinel:3000`.
+   ```sh
+   docker version
+   docker compose version
+   ```
+
+   `docker version` should show both client and server details. If access is
+   denied on Linux, configure Docker access for your user and log in again before
+   continuing.
+
+2. Clone the repository and enter its directory. Run the remaining Compose
+   commands from this directory:
+
+   ```sh
+   git clone https://github.com/luisweigl/Sentinel.git
+   cd Sentinel
+   ```
+
+3. Choose how you want to access the dashboard in `compose.yaml`. The default
+   mapping, `127.0.0.1:3000:3000`, makes it available only on the Docker host.
+   Use `127.0.0.1:8080:3000` for a different host port, or replace `127.0.0.1`
+   with the server's LAN IP to allow access from your network. Leave the final
+   `3000` unchanged unless you also change the container's `PORT` setting.
+
+   Sentinel has no application authentication. Restrict access to a trusted
+   network or use an authenticating reverse proxy. For HTTPS, configure your
+   reverse proxy to forward to `http://127.0.0.1:3000`. A proxy in another
+   container needs a shared Docker network and the upstream `http://sentinel:3000`.
+
+4. Build and start Sentinel in the background:
+
+   ```sh
+   docker compose up --build -d
+   docker compose ps
+   ```
+
+   The first build downloads the base image and installs dependencies. Compose
+   creates the `sentinel-data` volume automatically; no database setup is needed.
+   Wait for the service to report `healthy`. If it fails to start, inspect its logs:
+
+   ```sh
+   docker compose logs --tail=100 sentinel
+   ```
+
+5. Open http://localhost:3000 on the Docker host, or use the server address and
+   host port you configured. Add your first service through the dashboard using
+   an HTTP or HTTPS URL reachable from inside the container.
+
+   `localhost` in a monitored URL refers to the Sentinel container. For other
+   services, use a reachable LAN address or a Docker service name on a shared
+   network.
 
 ### Configuration
 
-| Variable | Application default | Container setting | Purpose |
-| --- | --- | --- | --- |
-| `NODE_ENV` | Unset | `production` | Enables serving the built frontend. |
-| `HOST` | `127.0.0.1` | `0.0.0.0` | Address bound inside the container. |
-| `PORT` | `3000` | `3000` | HTTP listening port; integer from 1 to 65535. |
-| `DATABASE_PATH` | `data/sentinel.sqlite` | `/data/sentinel.sqlite` | SQLite file; parent directory must be writable. |
+The supplied `compose.yaml` includes the settings needed to run Sentinel:
 
-Edit the service's `environment` in `compose.yaml` and recreate the container to
-apply changes. If changing the internal port, also update the port mapping.
-Keep `DATABASE_PATH` inside the mounted data directory. Outside Docker, production
-startup is `npm ci`, `npm run build`, then `npm start`.
+| Variable | Container setting | Purpose |
+| --- | --- | --- |
+| `NODE_ENV` | `production` | Serves the built dashboard alongside the API. |
+| `HOST` | `0.0.0.0` | Accepts connections inside the container. |
+| `PORT` | `3000` | HTTP listening port; integer from 1 to 65535. |
+| `DATABASE_PATH` | `/data/sentinel.sqlite` | SQLite file inside the persistent volume. |
+
+Edit the service's `environment` in `compose.yaml`, then run
+`docker compose up -d` to apply changes. If changing the internal port, also
+update the port mapping. Keep `DATABASE_PATH` inside `/data`.
 
 Service check intervals and timeouts are configured per service through the UI or
-API. The scheduler runs up to four checks concurrently. There is currently no
-automatic history cleanup; allow space for growing history and backups.
+API. There is currently no automatic history cleanup, so allow space for growing
+history.
 
-### Storage, networking, and lifecycle
+### Persistent storage
 
-The named volume `sentinel-data` mounts at `/data` and holds service settings and
-history. Persist the entire directory: SQLite WAL mode can also use
-`sentinel.sqlite-wal` and `sentinel.sqlite-shm`. Run one Sentinel instance per
-database. The fixed volume name assumes one deployment per Docker host; use a
-distinct volume name for additional deployments and adapt backup commands.
+The named volume `sentinel-data` holds service settings and history at `/data`.
+It survives container replacement and image upgrades. Run one Sentinel instance
+per database. For additional deployments on the same Docker host, use distinct
+volume names and host ports.
 
-For a bind mount, replace `sentinel-data:/data` with `./data:/data`. Create the
-directory first and grant the container user (UID/GID `1000:1000`) write access:
+To store data in a host directory instead, replace `sentinel-data:/data` with
+`./data:/data` in the service's `volumes` list. Create the directory and grant the
+container user (UID/GID `1000:1000`) write access before starting:
 
 ```sh
 mkdir -p data
@@ -97,105 +136,33 @@ sudo chown 1000:1000 data
 ```
 
 On hosts with SELinux enforcing, the bind mount may also need the `:Z` label.
-The backup commands below assume the default named-volume setup.
+Keep the entire data directory together; SQLite may create `-wal` and `-shm`
+files alongside the database.
 
-Monitored URLs must be reachable from inside the container. `localhost` refers to
-Sentinel itself; use Docker service names on shared networks or reachable host/LAN
-addresses for other services. On Linux, reaching a host service through
-`host.docker.internal` requires an explicit host-gateway mapping and a host service
-that listens on a reachable interface.
+### Stop, restart, and update
+
+Stop and start the existing container:
 
 ```sh
 docker compose stop
 docker compose start
-docker compose down
-docker compose up -d
 ```
 
-Stopping or removing containers preserves the named volume. **`docker compose
-down -v` deletes the volume and its history.** SIGTERM stops new checks, waits for
-active checks and HTTP connections, then closes SQLite. Compose allows 60 seconds
-before forcing termination. Increase `stop_grace_period` if service check timeouts
-or active HTTP connections can exceed that period.
+Compose restarts Sentinel automatically after a process exit or Docker restart.
+It allows 60 seconds for a clean shutdown. Increase `stop_grace_period` if your
+configured service timeouts can exceed that period.
 
-To upgrade, make a backup first, update the checkout, then run:
+To update the installation, pull the latest source and rebuild:
 
 ```sh
+git pull
 docker compose up --build -d
 docker compose ps
-docker compose logs --tail=100 sentinel
 ```
 
-Database migrations run automatically at startup. For a rollback after a schema
-change, restore the pre-upgrade backup and use its matching application version.
-
-### Backup and restore
-
-Use an offline backup for a consistent snapshot. Stop Sentinel and confirm it
-exited normally before archiving. Do not copy only the main SQLite file while the
-application runs: committed data may still be in the WAL file.
-
-Run from the checkout, with the locally built `sentinel:local` image available:
-
-```sh
-mkdir -p backups
-docker compose stop sentinel
-docker compose ps -a
-docker inspect --format '{{.State.Status}} {{.State.ExitCode}}' "$(docker compose ps -aq sentinel)"
-```
-
-Confirm the inspection reports `exited 0`. If shutdown was forced or failed,
-inspect the logs before continuing. Choose a new filename for each backup:
-
-```sh
-docker run --rm --user "$(id -u):$(id -g)" \
-  -v sentinel-data:/data:ro -v "$PWD/backups:/backup" \
-  --entrypoint tar sentinel:local \
-  -czf /backup/sentinel-before-upgrade.tar.gz -C /data .
-docker compose start sentinel
-```
-
-Only restart after the archive command succeeds. Keep copies of the archive off
-the Docker host and record the application revision used to create it. Archives
-contain monitored service URLs; restrict access appropriately.
-
-To restore, first back up the current deployment and stop/remove its container
-with `docker compose down` (without `-v`). Restore into a **new, empty volume**:
-
-```sh
-docker volume create sentinel-restored-data
-docker run --rm --user 0:0 \
-  -v sentinel-restored-data:/data -v "$PWD/backups:/backup:ro" \
-  --entrypoint tar sentinel:local \
-  -xzf /backup/sentinel-before-upgrade.tar.gz -C /data
-docker run --rm --user 0:0 -v sentinel-restored-data:/data \
-  --entrypoint chown sentinel:local -R 1000:1000 /data
-```
-
-Change the top-level volume's `name` in `compose.yaml` from `sentinel-data` to
-`sentinel-restored-data`; leave the service mount `sentinel-data:/data` unchanged.
-The old volume remains available for recovery. Using the matching application
-checkout, run `docker compose up --build -d`, check `/api/health`, and confirm the
-expected services and original history in the dashboard. Subsequent backup
-commands must use the new volume name. Never extract over an active database or
-mix a restored database with existing WAL files.
-
-### Container verification
-
-```sh
-npm test
-npm run build
-npm run test:container
-```
-
-The last command requires access to a Docker daemon and registry access for the
-initial image build. It validates Compose configuration, builds the image, checks
-production HTML/assets/API responses, persists a successful HTTP check, replaces
-the container, and restores an offline archive into another volume. It verifies
-the exact original history and runs SQLite `integrity_check` on the restored data.
-It uses isolated names and dynamic host ports, and removes its own containers,
-volumes, and image afterward. If interrupted forcibly, remove only resources
-with that run's `sentinel-test-<UUID>` prefix.
+Database migrations run automatically at startup. To remove the container while
+keeping its data, use `docker compose down`. **Adding `-v` deletes the data volume
+and its history.**
 
 ## API
 
