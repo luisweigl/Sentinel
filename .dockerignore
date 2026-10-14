@@ -1,0 +1,16 @@
+node_modules
+dist
+.git
+.vscode
+.agents
+.codex
+.aws
+coverage
+data
+backups
+.env
+.env.*
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.log

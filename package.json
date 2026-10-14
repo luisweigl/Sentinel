@@ -10,10 +10,11 @@
     "dev": "concurrently --kill-others -n server,client \"npm:dev:server\" \"npm:dev:client\"",
     "dev:server": "tsx watch src/server/index.ts",
     "dev:client": "vite",
-    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.test.json && tsc -p tsconfig.container-test.json",
     "build": "npm run typecheck && vite build && tsc -p tsconfig.server.json --noEmit false",
     "start": "NODE_ENV=production node dist/server/index.js",
-    "test": "tsx --test src/server/*.test.ts src/client/*.test.ts"
+    "test": "tsx --test src/server/*.test.ts src/client/*.test.ts",
+    "test:container": "tsx --test scripts/container.test.ts"
   },
   "dependencies": {
     "express": "^5.3.0",
