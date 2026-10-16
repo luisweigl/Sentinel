@@ -1,3 +1,4 @@
+import { authenticate, testAuthConfig } from './auth.test-support.js';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import test from 'node:test';
@@ -11,7 +12,10 @@ test('monitoring routes validate windows, pagination, timestamps, and service id
     name: 'API',
     url: 'http://localhost',
   });
-  const server = createApp(database).listen(0, '127.0.0.1');
+  const server = createApp(database, undefined, testAuthConfig).listen(
+    0,
+    '127.0.0.1',
+  );
   t.after(
     () =>
       new Promise<void>((resolve) =>
@@ -24,6 +28,7 @@ test('monitoring routes validate windows, pagination, timestamps, and service id
   await once(server, 'listening');
   const address = server.address();
   assert.ok(address && typeof address !== 'string');
+  await authenticate(t, `http://127.0.0.1:${address.port}`);
   const base = `http://127.0.0.1:${address.port}/api/services`;
   for (const query of [
     'window=bad',

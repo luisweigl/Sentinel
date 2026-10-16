@@ -1,3 +1,4 @@
+import { authenticate, testAuthConfig } from '../server/auth.test-support';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { createServer } from 'node:http';
@@ -27,7 +28,10 @@ test('UI API flow creates, monitors, edits, pauses, resumes, pages history, and 
     response.writeHead(204);
     response.end();
   });
-  const server = createApp(database).listen(0, '127.0.0.1');
+  const server = createApp(database, undefined, testAuthConfig).listen(
+    0,
+    '127.0.0.1',
+  );
   target.listen(0, '127.0.0.1');
   t.after(async () => {
     await Promise.all(
@@ -43,6 +47,7 @@ test('UI API flow creates, monitors, edits, pauses, resumes, pages history, and 
   assert.ok(address && typeof address !== 'string');
   assert.ok(targetAddress && typeof targetAddress !== 'string');
   const origin = `http://127.0.0.1:${address.port}`;
+  await authenticate(t, origin);
   const originalFetch = globalThis.fetch;
   t.mock.method(
     globalThis,

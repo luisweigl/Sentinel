@@ -1,3 +1,4 @@
+import { ApiError, requestJson } from './http';
 import type {
   Service as StoredService,
   CheckResult as StoredCheck,
@@ -76,20 +77,24 @@ export function toService(
   };
 }
 
+const unauthorized = new Set<() => void>();
+
+export function onUnauthorized(listener: () => void): () => void {
+  unauthorized.add(listener);
+  return () => {
+    unauthorized.delete(listener);
+  };
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`/api/services${path}`, options);
-  if (!response.ok) {
-    let message = `Request failed (${response.status}).`;
-    try {
-      const body: { error?: string } = await response.json();
-      if (typeof body.error === 'string') message = body.error;
-    } catch {
-      /* Preserve the HTTP error for non-JSON responses. */
+  try {
+    return await requestJson<T>(`/api/services${path}`, options);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401) {
+      for (const listener of unauthorized) listener();
     }
-    throw new Error(message);
+    throw error;
   }
-  if (response.status === 204) return undefined as T;
-  return response.json() as Promise<T>;
 }
 
 export async function loadOverview(

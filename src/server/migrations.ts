@@ -26,6 +26,21 @@ const migrations = [
       ON check_results(service_id, checked_at DESC, id DESC);
     CREATE INDEX check_results_time ON check_results(checked_at);
   `,
+  `
+    CREATE TABLE administrator (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      username TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      created_at INTEGER NOT NULL CHECK (created_at >= 0)
+    ) STRICT;
+    CREATE TABLE sessions (
+      token_hash TEXT PRIMARY KEY,
+      administrator_id INTEGER NOT NULL REFERENCES administrator(id) ON DELETE CASCADE,
+      created_at INTEGER NOT NULL CHECK (created_at >= 0),
+      expires_at INTEGER NOT NULL CHECK (expires_at > created_at)
+    ) STRICT;
+    CREATE INDEX sessions_expiry ON sessions(expires_at);
+  `,
 ];
 
 export function migrate(database: DatabaseSync): void {

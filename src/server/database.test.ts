@@ -29,7 +29,7 @@ function temporaryDatabase(t: TestContext): DatabaseSync {
 
 test('initial migration creates schema, indexes, and connection settings', (t) => {
   const database = temporaryDatabase(t);
-  assert.equal(database.prepare('PRAGMA user_version').get()?.user_version, 1);
+  assert.equal(database.prepare('PRAGMA user_version').get()?.user_version, 2);
   assert.equal(database.prepare('PRAGMA foreign_keys').get()?.foreign_keys, 1);
   assert.equal(
     database.prepare('PRAGMA journal_mode').get()?.journal_mode,
@@ -47,6 +47,9 @@ test('initial migration creates schema, indexes, and connection settings', (t) =
   assert.deepEqual(indexes, [
     'check_results_service_time',
     'check_results_time',
+    'sessions_expiry',
+    'sqlite_autoindex_administrator_1',
+    'sqlite_autoindex_sessions_1',
   ]);
   assert.deepEqual(listServices(database), []);
 });
@@ -76,7 +79,7 @@ test('service configuration and results survive reopening without rerunning migr
   assert.deepEqual(listServices(database), [service]);
   assert.deepEqual(getLatestCheckResult(database, service.id), result);
   assert.equal(result.error, null);
-  assert.equal(database.prepare('PRAGMA user_version').get()?.user_version, 1);
+  assert.equal(database.prepare('PRAGMA user_version').get()?.user_version, 2);
 });
 
 test('services can be updated, disabled, and deleted with cascading history', (t) => {
@@ -264,4 +267,38 @@ test('in-memory databases are supported', () => {
   } finally {
     database.close();
   }
+});
+
+test('version 1 upgrade adds authentication without changing populated monitoring data', (t) => {
+  const path = temporaryPath(t);
+  const old = openDatabase(path);
+  const service = createService(old, {
+    name: 'Existing service',
+    url: 'http://localhost',
+  });
+  saveCheckResult(old, {
+    serviceId: service.id,
+    checkedAt: 1000,
+    healthy: true,
+    httpStatus: 200,
+  });
+  const previousServices = old.prepare('SELECT * FROM services').all();
+  const previousResults = old.prepare('SELECT * FROM check_results').all();
+  old.exec(
+    'DROP TABLE sessions; DROP TABLE administrator; PRAGMA user_version = 1;',
+  );
+  old.close();
+  const upgraded = openDatabase(path);
+  t.after(() => upgraded.close());
+  assert.equal(upgraded.prepare('PRAGMA user_version').get()?.user_version, 2);
+  assert.deepEqual(
+    upgraded.prepare('SELECT * FROM services').all(),
+    previousServices,
+  );
+  assert.deepEqual(
+    upgraded.prepare('SELECT * FROM check_results').all(),
+    previousResults,
+  );
+  assert.deepEqual(upgraded.prepare('SELECT * FROM administrator').all(), []);
+  assert.deepEqual(upgraded.prepare('SELECT * FROM sessions').all(), []);
 });

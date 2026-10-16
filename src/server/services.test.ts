@@ -1,3 +1,4 @@
+import { authenticate, testAuthConfig } from './auth.test-support.js';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { test, type TestContext } from 'node:test';
@@ -13,7 +14,10 @@ async function assertError(response: Response): Promise<void> {
 
 async function setup(t: TestContext) {
   const database = openDatabase(':memory:');
-  const server = createApp(database).listen(0, '127.0.0.1');
+  const server = createApp(database, undefined, testAuthConfig).listen(
+    0,
+    '127.0.0.1',
+  );
   t.after(
     () =>
       new Promise<void>((resolve, reject) => {
@@ -27,6 +31,7 @@ async function setup(t: TestContext) {
   const address = server.address();
   assert.ok(address && typeof address !== 'string');
   const baseUrl = `http://127.0.0.1:${address.port}/api/services`;
+  await authenticate(t, `http://127.0.0.1:${address.port}`);
   const request = (method: string, path = '', body?: unknown) =>
     fetch(`${baseUrl}${path}`, {
       method,

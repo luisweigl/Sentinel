@@ -6,16 +6,20 @@ services:
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
-      PORT: "3000"
+      PORT: '3000'
       DATABASE_PATH: /data/sentinel.sqlite
+      SENTINEL_PUBLIC_ORIGIN: ${SENTINEL_PUBLIC_ORIGIN:-http://localhost:3000}
+      SENTINEL_ALLOW_HTTP: ${SENTINEL_ALLOW_HTTP:-true}
+      SENTINEL_SETUP_TOKEN: ${SENTINEL_SETUP_TOKEN:-smPV7zhKblI7EKAfBHXGTktIAszBleP6AUHKsGZRCCBDHLwAcCGQYXgpBc4024CD}
+      SENTINEL_TRUST_PROXY_HOPS: ${SENTINEL_TRUST_PROXY_HOPS:-0}
     ports:
-      - "127.0.0.1:3000:3000"
+      - '127.0.0.1:3000:3000'
     volumes:
       - sentinel-data:/data
     restart: unless-stopped
     stop_grace_period: 60s
     healthcheck:
-      test: ["CMD", "node", "dist/server/container-health.js"]
+      test: ['CMD', 'node', 'dist/server/container-health.js']
       interval: 30s
       timeout: 5s
       start_period: 10s

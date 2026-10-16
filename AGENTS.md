@@ -10,6 +10,7 @@
 - always run tests on changes
 - prefer simple solutions over unnecessary abstractions
 - Before making architectural changes, read PROJECT.md.
+- After changing a file, run format
 
 ## Frontend / UI
 
